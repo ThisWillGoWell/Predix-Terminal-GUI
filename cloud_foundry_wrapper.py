@@ -72,7 +72,7 @@ class CF:
 
     def putAppsEnv(self):
         """Get all the apps environment data
-        Once the cf apps have all been placed into the interal cache, we can start getting more information on them
+        Once the cf apps have all been placed into the internal cache, we can start getting more information on them
         Since there is no downstream requirements we can run each cf env in their own thread, then wait for
         all those threads to finish
         :return:
@@ -87,14 +87,31 @@ class CF:
 
     @staticmethod
     def makeCall(call):
-        """"""
-
+        """
+        Make a call using the subprocess module. Will return a string with the result
+         of the call was
+        :param call: the command to be opnened
+        :return: command result in a string
+        """
         p = subprocess.Popen(call, stdout=subprocess.PIPE, shell=True)
         result = p.communicate()[0]
         return str(result.decode("utf-8"))
 
-    def makeEnvCallAndWrite(self, appName, targetDic):
-        envResult = self.makeCall(self.cf_app_info_command + ' ' + appName).split('\n')
+
+    def makeEnvCallAndWrite(self, app_name, target_dict=None, return_dict=False):
+        """
+        Get the env variables from a cloud foundry app and places them into a dic
+        Makes the cf env call and the builds a dic of the environment variables
+        uses a state machine to parse the env string
+        The dic was used so when making a lot of these calls at a time 
+        they can just be inserted into the dic
+        :param app_name: the app to be called into cf
+        :param target_dict: the dic to place the result if defined
+        :param return_dict: if true will return the built dict 
+        :return: dic if returnDict is true
+        """
+
+        envResult = self.makeCall(self.cf_app_info_command + ' ' + app_name).split('\n')
 
         env_dic = {self.cf_app_env_system_provided_key: {}, self.cf_app_env_user_provided_key: {}}
         current_env = self.cf_app_env_system_provided_key
@@ -137,5 +154,7 @@ class CF:
                     env_dic[self.cf_app_env_user_provided_key][env[0]] = env[1]
 
         #print(json.dumps(env_dic))
-
-        targetDic[self.cf_app_env_key] = env_dic
+        if target_dict is not None:
+            target_dict[self.cf_app_env_key] = env_dic
+        if return_dict:
+            return env_dic
