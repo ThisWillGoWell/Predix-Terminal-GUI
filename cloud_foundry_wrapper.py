@@ -1,6 +1,9 @@
 import subprocess
 import threading
 import json
+import os.path
+import app_utils
+import cache
 
 class CF:
     cf_app_requested_state_key = 'state'
@@ -9,22 +12,27 @@ class CF:
     cf_app_url_key = 'url'
     cf_app_instance_key = 'instance'
     cf_app_env_key = 'env'
+    cf_app_details_key = 'details'
     cf_app_env_system_provided_key = 'System-Provided'
     cf_app_env_system_vcap_services_key = 'VCAP_SERVICES'
     cf_app_env_system_vcap_app_key = 'VCAP_APPLICATION'
     cf_app_env_user_provided_key = 'User-Provided'
 
     cf_app_list_command = 'cf a'
+    cf_app_details_command = 'cf app'
     cf_app_info_command = 'cf env'
+
 
     def __init__(self):
         """Initialize the CF interface
         define the state variables of the cf app, currently not used as an object
         """
+        self.logger = app_utils.logger
         self.current_app_info = {}
         self.org = ""
         self.space = ""
         self.user = ""
+        self.cache = cache.Cache()
         self.update_call = self.defaultUpdateCall
 
     def update(self):
@@ -34,10 +42,16 @@ class CF:
         don't really like that the test app is coupled in the cf interface but easy to do it
         :return:  None
         """
+        if self.cache.file_found:
+            self.logger.log('using cache')
+            self.current_app_info = self.cache.read_cache(self.cache.cache_cf_app_info)
+        else:
+            self.current_app_info = {}
+            self.putAppList()
+            self.putAppsEnv()
+            self.putAppDetails()
+            self.cache.write_cache(self.cache.cache_cf_app_info, self.current_app_info)
 
-        self.current_app_info = {}
-        self.putAppList()
-        self.putAppsEnv()
         self.update_call(self.current_app_info)
 
 
@@ -48,6 +62,31 @@ class CF:
 
     def defaultUpdateCall(self, value):
         pass
+
+    def putAppDetails(self):
+        threads = []
+        for key,value in self.current_app_info.iteritems():
+            threads.append(threading.Thread(target=self.makeDetailCallAndWrite, args=(key, value)))
+            threads[-1].start()
+
+        print 'joining'
+        for t in threads:
+            t.join()
+        print 'exit'
+
+    def makeDetailCallAndWrite(self, appId, targetDict, returnDic=False):
+        builder = {}
+        cf_call_result = self.makeCall(self.cf_app_details_command + " " + appId).split('\n')
+        for line in cf_call_result:
+            if ':' in line and len(line.split(':')) == 2:
+                current_detail = line.split(':')
+                builder[current_detail[0]]= ' '.join(current_detail[1].split())
+        if targetDict is not None:
+            targetDict[self.cf_app_details_key] = builder
+        if returnDic:
+            return builder
+
+
 
 
     def putAppList(self):
@@ -118,14 +157,13 @@ class CF:
 
         working_string = ""
         working_string_name = ''
-
         if envResult[1] == 'OK':
             for i in range(3, len(envResult)):
                 line = envResult[i]
                 if line == 'User-Provided:':
                     current_env = self.cf_app_env_user_provided_key
 
-                elif line == 'No user-defiend env variables have been set':
+                elif line == 'No user-defined env variables have been set':
                     break
 
                 elif current_env == self.cf_app_env_system_provided_key:
@@ -158,3 +196,27 @@ class CF:
             target_dict[self.cf_app_env_key] = env_dic
         if return_dict:
             return env_dic
+
+
+
+
+
+
+
+if __name__ == "__main__":
+    cf = CF()
+
+    cf.update()
+
+
+
+
+
+
+
+
+
+
+
+
+
