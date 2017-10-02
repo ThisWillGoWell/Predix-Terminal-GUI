@@ -18,6 +18,10 @@ class CF:
     cf_app_env_system_vcap_app_key = 'VCAP_APPLICATION'
     cf_app_env_user_provided_key = 'User-Provided'
 
+    cf_user_org_key = 'org'
+    cf_user_space_key = 'space'
+    cf_user_account_key = 'account'
+
     cf_app_list_command = 'cf a'
     cf_app_details_command = 'cf app'
     cf_app_info_command = 'cf env'
@@ -35,7 +39,7 @@ class CF:
         self.cache = cache.Cache()
         self.update_call = self.defaultUpdateCall
 
-    def update(self):
+    def updateAll(self):
         """Update the working CF Cache
         Run the cf commands to so the dic can be created
         Then call the update function of the Test app to update the front ent
@@ -87,6 +91,31 @@ class CF:
             return builder
 
 
+    def refresh(self, appId=None):
+        if appId:
+            self.putAppList()
+            threads = []
+            if not appId in self.current_app_info:
+                return
+            t1 =threading.Thread(target=self.makeEnvCallAndWrite, args=(appId, self.current_app_info[appId]))
+            t2 =threading.Thread(target=self.makeDetailCallAndWrite, args=(appId, self.current_app_info[appId]))
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+
+
+        self.update_call(self.current_app_info)
+
+    def refreshApp(self, appId):
+        self.logger.log('updateing: ' + str(appId))
+        self.refresh(appId=appId)
+
+    def putUserInfo(self, string):
+        string_list = string.split()
+        self.current_app_info[self.cf_user_space_key] = string_list[7]
+        self.current_app_info[self.cf_user_org_key] = string_list[4]
+        self.current_app_info[self.cf_user_account_key] = string_list[9]
 
 
     def putAppList(self):
@@ -97,15 +126,30 @@ class CF:
         cf_call_result = self.makeCall(self.cf_app_list_command).split('\n')
         startedAppList = False
         if cf_call_result[1] == "OK":
+            #todo not pull from here, actually use the commands
+            self.putUserInfo(cf_call_result[0])
+            self.logger.log('aadasdada ' + cf_call_result)
             for app_str in cf_call_result[5:-2]:
                 app_list = app_str.split()
-                self.current_app_info[app_list[0]] = {
-                    self.cf_app_url_key: "",
-                    self.cf_app_requested_state_key: app_list[1],
-                    self.cf_app_memory_key: app_list[3],
-                    self.cf_app_disk_key: app_list[4],
-                    self.cf_app_instance_key: app_list[2]
-                }
+                current_app_key  =app_list[0]
+
+                if current_app_key not in self.current_app_info:
+                    builder = {}
+                    builder[self.cf_app_url_key] = ""
+                    builder[self.cf_app_requested_state_key] = app_list[1]
+                    builder[self.cf_app_memory_key] = app_list[3]
+                    builder[self.cf_app_disk_key] = app_list[4]
+                    builder[self.cf_app_instance_key] = app_list[2]
+                    builder[self.cf_app_env_key] = {}
+                    builder[self.cf_app_details_key] ={}
+                    self.current_app_info[current_app_key] = builder
+
+                current_app  =  self.current_app_info[current_app_key]
+                current_app[self.cf_app_requested_state_key] = app_list[1]
+                current_app[self.cf_app_memory_key] = app_list[3]
+                current_app[self.cf_app_disk_key] = app_list[4]
+                current_app[self.cf_app_instance_key] = app_list[2]
+
                 if len(app_list) > 5:
                     self.current_app_info[app_list[0]][self.cf_app_url_key] = app_list[5]
 
@@ -206,7 +250,7 @@ class CF:
 if __name__ == "__main__":
     cf = CF()
 
-    cf.update()
+    cf.updateAll()
 
 
 
